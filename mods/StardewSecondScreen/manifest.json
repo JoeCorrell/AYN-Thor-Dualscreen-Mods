@@ -1,0 +1,10 @@
+{
+  "Name": "Wemu Second Screen",
+  "Author": "wemu",
+  "Version": "1.0.0",
+  "Description": "Publishes the day, the journal, the calendar and the bag to wemu's second screen.",
+  "UniqueID": "wemu.SecondScreen",
+  "EntryDll": "StardewSecondScreen.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": []
+}

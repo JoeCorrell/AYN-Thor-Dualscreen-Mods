@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <AssemblyName>StardewSecondScreen</AssemblyName>
+    <RootNamespace>StardewSecondScreen</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <EnableHarmony>false</EnableHarmony>
+    <!--
+      The mod is copied into the container by hand, not into this PC's install.
+      The game runs from Android storage; deploying here would only ever update
+      a copy nothing loads. See the deploy note in the README.
+    -->
+    <EnableModDeploy>false</EnableModDeploy>
+    <EnableModZip>false</EnableModZip>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Pathoschild.Stardew.ModBuildConfig" Version="4.3.2" />
+  </ItemGroup>
+
+</Project>

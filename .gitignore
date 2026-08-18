@@ -1,0 +1,5 @@
+build/
+.gradle/
+mods/**/bin/
+mods/**/obj/
+*.apk
