@@ -3,20 +3,32 @@
 A SMAPI mod that publishes what is happening in Stardew Valley to a second
 screen.
 
-It reads the game and sends it over a loopback socket. Nothing is patched, so it
+It reads the game and sends it over a socket. Nothing is patched, so it
 keeps working across game updates rather than breaking on them.
 
 ## What it sends
 
 - The day: date, clock, weather today and tomorrow, gold, luck, energy, health
 - Your bag, with the game's own icons for every item
-- The valley map, and where you are on it
+- The valley map, where you are on it, and your farmer drawn as the marker
+- The name of the place you are standing, as the game names it
 - Crops needing water, anywhere you own them
+- Fruit trees with fruit waiting
 - Machines with something in them, and how long is left
 - Animals not yet petted, and produce waiting
+- The pet, and whether its water bowl is filled
+- The shipping bin, and what today is worth so far
 - Community Center bundles, and what is still missing
 - Villagers, birthdays and who you have not spoken to today
-- Quests with their current objective
+- What each villager loves, so the panel can flag a gift you are carrying
+- Quests with their current objective, and special orders with their deadlines
+- Every skill and the experience still owed to its next level
+- Recipes you have the ingredients to craft or cook right now
+- The season's calendar: birthdays with portraits, and festivals with the time
+  and place they run
+- Whether the travelling cart is in the forest today
+- How deep you have been in the mines and Skull Cavern
+- Museum donations, and anything in your bag Gunther would take
 - The game's own interface art, so the panel is drawn out of Stardew's pixels
 
 While a screen is attached the game's own HUD comes off the top screen, since
@@ -24,8 +36,9 @@ the panel repeats all of it. It goes back the moment the screen disconnects.
 
 ## What it accepts
 
-Tapping a hotbar slot switches what you are holding. Tapping a bag slot brings
-it to hand. Cancelling a quest, if the game allows that quest to be cancelled.
+Selecting a hotbar slot, moving a bag slot to hand, eating what is in a slot,
+sorting the bag, and cancelling a quest if the game allows that quest to be
+cancelled.
 
 Every one of those runs on the game thread, and each can be turned off.
 
@@ -40,15 +53,25 @@ screen's settings page, and changing it there writes this file.
 | `AllowInventoryEdits` | true | Let the panel move items |
 | `AllowQuestCancel` | true | Let the panel cancel quests |
 | `FarmerMarker` | true | Draw your farmer as the map marker |
-| `SendMap` | true | |
+| `SendMap` | true | The valley picture, the marker and the portrait |
 | `SendCrops` | true | |
 | `SendMachines` | true | The most expensive one |
 | `SendAnimals` | true | |
 | `SendBundles` | true | |
-| `SendVillagers` | true | |
+| `SendVillagers` | true | Also the gift tastes behind the gift card |
+| `SendCrafting` | true | Checks every known recipe against the bag |
+| `AllowRemote` | false | Accept connections from off this machine |
 
 Each of the send options costs the game real work every ten in game minutes.
 Turn off what you never look at.
+
+With `AllowRemote` on, the mod also announces itself on the local network every
+few seconds, so the app can find it without an address being typed.
+
+`AllowRemote` is the one option with no switch on the panel. It changes who can
+reach a running save, so it is a deliberate act at a keyboard rather than
+something tapped while looking for the backdrop colour. Off, the socket is
+loopback only.
 
 ## Installing
 
@@ -64,6 +87,16 @@ dotnet build -c Release
 The output is in `bin/Release/net6.0`. The project does not deploy itself,
 because the game it is for usually runs somewhere other than the machine that
 built it.
+
+## What it costs
+
+Everything above is read from live game state, so it is worked out rather than
+stored. What that costs is kept off the clock: only the day, machines, animals,
+the pet and mine depth are worked out as time passes, because only those change
+with time. Anything that follows the bag is worked out when the bag changes, and
+everything else once a day.
+
+Nothing at all is computed while no screen is attached.
 
 ## Reading it
 

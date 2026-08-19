@@ -8,8 +8,11 @@ using StardewModdingAPI.Events;
 using StardewValley;
 using StardewValley.Quests;
 using StardewValley.Locations;
+using StardewValley.Characters;
+using StardewValley.Buildings;
 using StardewValley.WorldMaps;
 using StardewValley.Objects;
+using StardewValley.Menus;
 using StardewValley.TerrainFeatures;
 using Microsoft.Xna.Framework.Graphics;
 
@@ -21,6 +24,7 @@ namespace StardewSecondScreen
         private const int Port = 7786;
 
         private Bridge? _bridge;
+        private Beacon? _beacon;
 
         private int _lastGold = -1;
         private int _lastInventoryHash;
@@ -59,9 +63,21 @@ namespace StardewSecondScreen
         {
             _config = helper.ReadConfig<ModConfig>();
 
-            _bridge = new Bridge(Port, message => Monitor.Log(message, LogLevel.Info));
+            _bridge = new Bridge(
+                Port,
+                message => Monitor.Log(message, LogLevel.Info),
+                _config.AllowRemote);
             _bridge.MessageReceived += _commands.Accept;
             _bridge.Start();
+
+            if (_config.AllowRemote)
+            {
+                _beacon = new Beacon(
+                    Port,
+                    Describe,
+                    message => Monitor.Log(message, LogLevel.Info));
+                _beacon.Start();
+            }
 
             helper.Events.GameLoop.UpdateTicked += OnTick;
             helper.Events.GameLoop.SaveLoaded += OnSaveLoaded;
@@ -70,9 +86,14 @@ namespace StardewSecondScreen
             helper.Events.GameLoop.OneSecondUpdateTicked += OnSecond;
             helper.Events.Player.InventoryChanged += (_, _) =>
             {
-                SendInventory();
-
-                SendBundles();
+                Attempt("inventory", SendInventory);
+                Attempt("bundles", SendBundles);
+                Attempt("crafting", SendCrafting);
+                Attempt("cooking", SendCooking);
+                Attempt("shipping", SendShipping);
+                Attempt("collections", SendCollections);
+                Attempt("gifts", SendGifts);
+                Attempt("trees", SendTrees);
             };
             helper.Events.Player.Warped += (_, _) => SendDay();
             helper.Events.GameLoop.ReturnedToTitle += OnReturnedToTitle;
@@ -81,8 +102,15 @@ namespace StardewSecondScreen
 
         public override object? GetApi() => null;
 
+        private string Describe() => Json.Message(
+            "wemu_beacon",
+            Json.Str("game", "stardew"),
+            Json.Num("port", Port),
+            Json.Str("save", Context.IsWorldReady ? Game1.player?.farmName?.Value ?? "" : ""));
+
         protected override void Dispose(bool disposing)
         {
+            _beacon?.Dispose();
             _bridge?.Dispose();
             base.Dispose(disposing);
         }
@@ -98,9 +126,10 @@ namespace StardewSecondScreen
         private void OnTimeChanged(object? sender, TimeChangedEventArgs e)
         {
             Attempt("day", SendDay);
-
             Attempt("machines", SendMachines);
             Attempt("animals", SendAnimals);
+            Attempt("pet", SendPets);
+            Attempt("mines", SendMines);
         }
 
         private void OnSecond(object? sender, OneSecondUpdateTickedEventArgs e)
@@ -202,6 +231,24 @@ namespace StardewSecondScreen
                     SendEverything();
                     break;
 
+                case "eat_slot":
+                    if (!_config.AllowInventoryEdits) break;
+                    var slot = command.A;
+                    if (slot < 0 || slot >= player.Items.Count) break;
+                    if (player.Items[slot] is not StardewValley.Object food) break;
+                    if (food.Edibility <= InedibleThreshold) break;
+                    Game1.player.eatObject(food);
+                    food.Stack--;
+                    if (food.Stack <= 0) player.Items[slot] = null;
+                    SendInventory();
+                    break;
+
+                case "sort_bag":
+                    if (!_config.AllowInventoryEdits) break;
+                    ItemGrabMenu.organizeItemsInList(player.Items);
+                    SendInventory();
+                    break;
+
                 case "refresh":
                     SendEverything();
                     break;
@@ -222,6 +269,7 @@ namespace StardewSecondScreen
                 case "sendBundles": _config.SendBundles = value; return true;
                 case "sendVillagers": _config.SendVillagers = value; return true;
                 case "sendMap": _config.SendMap = value; return true;
+                case "sendCrafting": _config.SendCrafting = value; return true;
                 default:
                     Monitor.Log($"The console asked for an unknown setting \"{key}\".",
                                 LogLevel.Trace);
@@ -272,6 +320,17 @@ namespace StardewSecondScreen
             Attempt("machines", SendMachines);
             Attempt("bundles", SendBundles);
             Attempt("animals", SendAnimals);
+            Attempt("gifts", SendGifts);
+            Attempt("crafting", SendCrafting);
+            Attempt("calendar", SendCalendar);
+            Attempt("cart", SendCart);
+            Attempt("orders", SendOrders);
+            Attempt("cooking", SendCooking);
+            Attempt("shipping", SendShipping);
+            Attempt("trees", SendTrees);
+            Attempt("pet", SendPets);
+            Attempt("mines", SendMines);
+            Attempt("collections", SendCollections);
         }
 
         private void Attempt(string what, Action send)
@@ -539,15 +598,6 @@ namespace StardewSecondScreen
                     return (-1, -1);
                 }
 
-                var ratio = position.Value.GetPositionRatioIfValid();
-                if (ratio != null)
-                {
-                    var across = (int)Math.Round(ratio.Value.X * Thousandths);
-                    var down = (int)Math.Round(ratio.Value.Y * Thousandths);
-                    Explain($"on the map at {across}/1000, {down}/1000 from \"{where}\"");
-                    return (across, down);
-                }
-
                 var pixel = position.Value.GetMapPixelPosition();
                 MeasureRegion(position.Value);
 
@@ -794,8 +844,11 @@ namespace StardewSecondScreen
                     if (days < 0) days += 112;
                 }
 
+                if (days >= 0 && days <= PortraitDays) SendPortrait(npc);
+
                 villagers.Add(Json.Object(
                     Json.Str("name", npc.displayName ?? name),
+                    Json.Str("npc", npc.Name ?? name),
                     Json.Num("hearts", friendship.Points / 250),
                     Json.Num("maxHearts", friendship.IsMarried() ? 14 : 10),
                     Json.Str("birthdaySeason", Capitalise(npc.Birthday_Season ?? "")),
@@ -1274,6 +1327,10 @@ namespace StardewSecondScreen
                 "SendAnimals" => "sdv_animals",
                 "SendBundles" => "sdv_bundles",
                 "SendVillagers" => "sdv_villagers",
+                "SendGifts" => "sdv_gifts",
+                "SendCrafting" => "sdv_crafting",
+                "SendCooking" => "sdv_cooking",
+                "SendTrees" => "sdv_trees",
                 _ => "",
             };
             var field = sender switch
@@ -1283,6 +1340,10 @@ namespace StardewSecondScreen
                 "SendAnimals" => "animals",
                 "SendBundles" => "bundles",
                 "SendVillagers" => "villagers",
+                "SendGifts" => "villagers",
+                "SendCrafting" => "recipes",
+                "SendCooking" => "recipes",
+                "SendTrees" => "trees",
                 _ => "",
             };
             if (kind.Length == 0) return;
@@ -1302,7 +1363,8 @@ namespace StardewSecondScreen
                 Json.Flag("sendAnimals", _config.SendAnimals),
                 Json.Flag("sendBundles", _config.SendBundles),
                 Json.Flag("sendVillagers", _config.SendVillagers),
-                Json.Flag("sendMap", _config.SendMap)));
+                Json.Flag("sendMap", _config.SendMap),
+                Json.Flag("sendCrafting", _config.SendCrafting)));
         }
 
         private void SendSkills()
@@ -1314,8 +1376,573 @@ namespace StardewSecondScreen
                 Json.Num("mining", Game1.player.MiningLevel),
                 Json.Num("foraging", Game1.player.ForagingLevel),
                 Json.Num("fishing", Game1.player.FishingLevel),
-                Json.Num("combat", Game1.player.CombatLevel)));
+                Json.Num("combat", Game1.player.CombatLevel),
+                Json.Num("farmingNext", ToNextLevel(0)),
+                Json.Num("miningNext", ToNextLevel(3)),
+                Json.Num("foragingNext", ToNextLevel(2)),
+                Json.Num("fishingNext", ToNextLevel(1)),
+                Json.Num("combatNext", ToNextLevel(4))));
         }
+
+        private static int ToNextLevel(int skill)
+        {
+            try
+            {
+                var earned = Game1.player.experiencePoints[skill];
+                foreach (var threshold in LevelThresholds)
+                {
+                    if (earned < threshold) return threshold - earned;
+                }
+                return 0;
+            }
+            catch
+            {
+                return -1;
+            }
+        }
+
+        private static readonly int[] LevelThresholds =
+        {
+            100, 380, 770, 1300, 2150, 3300, 4800, 6900, 10000, 15000,
+        };
+
+        private void SendGifts()
+        {
+            if (!Live) return;
+            if (!_config.SendVillagers) { Clear("SendGifts"); return; }
+
+            var carried = new HashSet<string>();
+            foreach (var item in Game1.player.Items)
+                if (item != null) carried.Add(item.QualifiedItemId);
+
+            var entries = new List<string>();
+            foreach (var name in Game1.player.friendshipData.Keys.ToList())
+            {
+                try
+                {
+                    if (!Game1.NPCGiftTastes.TryGetValue(name, out var tastes)) continue;
+                    var fields = tastes.Split('/');
+                    if (fields.Length < 2) continue;
+
+                    var loved = new List<string>();
+                    var have = false;
+                    foreach (var raw in fields[1].Split(' '))
+                    {
+                        if (string.IsNullOrWhiteSpace(raw)) continue;
+                        var qid = ItemRegistry.QualifyItemId(raw) ?? "(O)" + raw;
+                        var data = ItemRegistry.GetData(qid);
+                        if (data == null) continue;
+                        if (carried.Contains(qid)) have = true;
+                        SendSprite(qid);
+                        loved.Add(Json.Object(
+                            Json.Str("id", qid),
+                            Json.Str("name", data.DisplayName),
+                            Json.Flag("carried", carried.Contains(qid))));
+                        if (loved.Count >= MaximumGifts) break;
+                    }
+                    if (loved.Count == 0) continue;
+
+                    var npc = Game1.getCharacterFromName(name);
+                    entries.Add(Json.Object(
+                        Json.Str("name", npc?.displayName ?? name),
+                        Json.Flag("carrying", have),
+                        Json.Array("loves", loved)));
+                }
+                catch
+                {
+                }
+            }
+
+            _bridge.Broadcast("sdv_gifts",
+                Json.Message("sdv_gifts", Json.Array("villagers", entries)));
+        }
+
+        private const int MaximumGifts = 8;
+
+        private void SendCrafting()
+        {
+            if (!Live) return;
+            if (!_config.SendCrafting) { Clear("SendCrafting"); return; }
+
+            var ready = new List<string>();
+            try
+            {
+                foreach (var known in Game1.player.craftingRecipes.Keys.ToList())
+                {
+                    try
+                    {
+                        var recipe = new CraftingRecipe(known, false);
+                        if (!recipe.doesFarmerHaveIngredientsInInventory()) continue;
+
+                        var made = recipe.getIndexOfMenuView();
+                        var qid = ItemRegistry.QualifyItemId(made) ?? made;
+                        if (qid != null) SendSprite(qid);
+
+                        ready.Add(Json.Object(
+                            Json.Str("id", qid ?? ""),
+                            Json.Str("name", recipe.DisplayName)));
+                        if (ready.Count >= MaximumRecipes) break;
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_crafting",
+                Json.Message("sdv_crafting", Json.Array("recipes", ready)));
+        }
+
+        private const int MaximumRecipes = 24;
+
+        private void SendCalendar()
+        {
+            if (!Live) return;
+
+            var days = new List<string>();
+            try
+            {
+                var season = Game1.currentSeason;
+                var birthdays = new Dictionary<int, List<string>>();
+                var ids = new Dictionary<int, string>();
+
+                foreach (var name in Game1.player.friendshipData.Keys.ToList())
+                {
+                    var npc = Game1.getCharacterFromName(name);
+                    if (npc == null) continue;
+                    if (!string.Equals(npc.Birthday_Season, season, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (npc.Birthday_Day <= 0) continue;
+
+                    if (!birthdays.TryGetValue(npc.Birthday_Day, out var onThatDay))
+                    {
+                        onThatDay = new List<string>();
+                        birthdays[npc.Birthday_Day] = onThatDay;
+                    }
+                    onThatDay.Add(npc.displayName ?? name);
+                    if (!ids.ContainsKey(npc.Birthday_Day)) ids[npc.Birthday_Day] = npc.Name ?? name;
+                    SendPortrait(npc);
+                }
+
+                for (var day = 1; day <= DaysInSeason; day++)
+                {
+                    var festival = "";
+                    try
+                    {
+                        if (Utility.isFestivalDay(day, Game1.season)) festival = FestivalName(day);
+                    }
+                    catch
+                    {
+                    }
+
+                    birthdays.TryGetValue(day, out var names);
+                    if (festival.Length == 0 && (names == null || names.Count == 0)) continue;
+
+                    days.Add(Json.Object(
+                        Json.Num("day", day),
+                        Json.Str("festival", festival),
+                        Json.Str("festivalWhen", festival.Length == 0 ? "" : FestivalWhen(day)),
+                        Json.Str("festivalWhere", festival.Length == 0 ? "" : FestivalWhere(day)),
+                        Json.Str("names", names == null ? "" : string.Join(", ", names)),
+                        Json.Str("npc", ids.TryGetValue(day, out var who) ? who : "")));
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_calendar", Json.Message(
+                "sdv_calendar",
+                Json.Str("season", Capitalise(Game1.currentSeason)),
+                Json.Num("today", Game1.dayOfMonth),
+                Json.Array("days", days)));
+        }
+
+        private const int DaysInSeason = 28;
+
+        private const int PortraitDays = 7;
+
+        private const int InedibleThreshold = -300;
+
+        private static string FestivalName(int day)
+        {
+            try
+            {
+                var key = Game1.currentSeason + day;
+                if (Game1.temporaryContent.Load<Dictionary<string, string>>("Data\\Festivals\\" + key)
+                        is { } data && data.TryGetValue("name", out var name))
+                {
+                    return name;
+                }
+            }
+            catch
+            {
+            }
+            return "Festival";
+        }
+
+        private static string FestivalField(int day, int index)
+        {
+            try
+            {
+                var key = Game1.currentSeason + day;
+                if (Game1.temporaryContent.Load<Dictionary<string, string>>("Data\\Festivals\\" + key)
+                        is { } data && data.TryGetValue("conditions", out var conditions))
+                {
+                    var parts = conditions.Split('/');
+                    if (index < parts.Length) return parts[index];
+                }
+            }
+            catch
+            {
+            }
+            return "";
+        }
+
+        private static string FestivalWhere(int day) => FestivalField(day, 0);
+
+        private static string FestivalWhen(int day)
+        {
+            var window = FestivalField(day, 1).Split(' ');
+            if (window.Length < 2) return "";
+            return Clock(window[0]) + " to " + Clock(window[1]);
+        }
+
+        private static string Clock(string raw)
+        {
+            if (!int.TryParse(raw, out var value)) return "";
+            var hours = value / 100 % 24;
+            var minutes = value % 100;
+            var suffix = hours < 12 ? "am" : "pm";
+            var shown = hours % 12 == 0 ? 12 : hours % 12;
+            return minutes == 0 ? $"{shown}{suffix}" : $"{shown}:{minutes:00}{suffix}";
+        }
+
+        private void SendOrders()
+        {
+            if (!Live) return;
+
+            var orders = new List<string>();
+            try
+            {
+                foreach (var order in Game1.player.team.specialOrders)
+                {
+                    if (order == null) continue;
+                    var objective = "";
+                    try
+                    {
+                        foreach (var step in order.objectives)
+                        {
+                            var text = step?.GetDescription();
+                            if (string.IsNullOrWhiteSpace(text)) continue;
+                            objective = StripMarkup(text);
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                    }
+
+                    orders.Add(Json.Object(
+                        Json.Str("title", StripMarkup(order.GetName())),
+                        Json.Str("objective", objective),
+                        Json.Num("daysLeft", order.GetDaysLeft())));
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_orders",
+                Json.Message("sdv_orders", Json.Array("orders", orders)));
+        }
+
+        private void SendPortrait(NPC npc)
+        {
+            var id = "npc:" + (npc.Name ?? "");
+            if (_bridge == null || _sprites.AlreadySent(id)) return;
+            try
+            {
+                var portrait = npc.Portrait;
+                if (portrait == null) return;
+                var png = _sprites.EncodeRegion(
+                    portrait, new Microsoft.Xna.Framework.Rectangle(0, 0, 64, 64));
+                if (png == null) return;
+                _sprites.Remember(id);
+                _bridge.Send(Json.Message(
+                    "sdv_sprite",
+                    Json.Str("id", id),
+                    Json.Num("inset", 0),
+                    Json.Str("png", Convert.ToBase64String(png))));
+            }
+            catch
+            {
+            }
+        }
+
+        private void SendCart()
+        {
+            if (!Live) return;
+
+            var open = false;
+            try
+            {
+                if (Game1.getLocationFromName("Forest") is Forest forest)
+                {
+                    open = forest.travelingMerchantDay;
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_cart", Json.Message("sdv_cart", Json.Flag("open", open)));
+        }
+
+        private void SendCooking()
+        {
+            if (!Live) return;
+            if (!_config.SendCrafting) { Clear("SendCooking"); return; }
+
+            var ready = new List<string>();
+            try
+            {
+                foreach (var known in Game1.player.cookingRecipes.Keys.ToList())
+                {
+                    try
+                    {
+                        var recipe = new CraftingRecipe(known, true);
+                        if (!recipe.doesFarmerHaveIngredientsInInventory()) continue;
+
+                        var made = recipe.getIndexOfMenuView();
+                        var qid = ItemRegistry.QualifyItemId(made) ?? made;
+                        if (qid != null) SendSprite(qid);
+
+                        ready.Add(Json.Object(
+                            Json.Str("id", qid ?? ""),
+                            Json.Str("name", recipe.DisplayName)));
+                        if (ready.Count >= MaximumRecipes) break;
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_cooking",
+                Json.Message("sdv_cooking", Json.Array("recipes", ready)));
+        }
+
+        private void SendShipping()
+        {
+            if (!Live) return;
+
+            var items = new List<string>();
+            var total = 0;
+            try
+            {
+                var bin = Game1.getFarm()?.getShippingBin(Game1.player);
+                if (bin != null)
+                {
+                    foreach (var item in bin)
+                    {
+                        if (item == null) continue;
+                        var worth = 0;
+                        try
+                        {
+                            if (item is StardewValley.Object sold)
+                                worth = sold.sellToStorePrice() * item.Stack;
+                        }
+                        catch
+                        {
+                        }
+                        total += worth;
+                        SendSprite(item.QualifiedItemId);
+                        if (items.Count >= MaximumShipped) continue;
+                        items.Add(Json.Object(
+                            Json.Str("id", item.QualifiedItemId),
+                            Json.Str("name", item.DisplayName),
+                            Json.Num("count", item.Stack),
+                            Json.Num("worth", worth)));
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_shipping", Json.Message(
+                "sdv_shipping",
+                Json.Num("total", total),
+                Json.Array("items", items)));
+        }
+
+        private const int MaximumShipped = 12;
+
+        private void SendTrees()
+        {
+            if (!Live) return;
+            if (!_config.SendCrops) { Clear("SendTrees"); return; }
+
+            var trees = new List<string>();
+            try
+            {
+                Utility.ForEachLocation(location =>
+                {
+                    foreach (var feature in location.terrainFeatures.Values.ToList())
+                    {
+                        if (feature is not FruitTree tree) continue;
+                        var count = 0;
+                        try
+                        {
+                            count = tree.fruit.Count;
+                        }
+                        catch
+                        {
+                        }
+                        if (count <= 0) continue;
+
+                        var qid = "";
+                        try
+                        {
+                            var first = tree.fruit[0];
+                            if (first != null)
+                            {
+                                qid = first.QualifiedItemId;
+                                SendSprite(qid);
+                            }
+                        }
+                        catch
+                        {
+                        }
+
+                        trees.Add(Json.Object(
+                            Json.Str("id", qid),
+                            Json.Str("location", LocationName(location)),
+                            Json.Num("count", count)));
+                    }
+                    return true;
+                });
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_trees",
+                Json.Message("sdv_trees", Json.Array("trees", trees)));
+        }
+
+        private void SendPets()
+        {
+            if (!Live) return;
+
+            var name = "";
+            var petted = false;
+            var bowl = false;
+            try
+            {
+                var pet = Game1.player.getPet();
+                if (pet != null)
+                {
+                    name = pet.displayName ?? pet.Name ?? "";
+                    petted = pet.lastPetDay.ContainsKey(Game1.player.UniqueMultiplayerID)
+                             && pet.lastPetDay[Game1.player.UniqueMultiplayerID]
+                             == Game1.Date.TotalDays;
+                }
+                if (Game1.getFarm() is { } farm)
+                {
+                    foreach (var building in farm.buildings)
+                    {
+                        if (building is PetBowl dish && dish.watered.Value)
+                        {
+                            bowl = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_pet", Json.Message(
+                "sdv_pet",
+                Json.Str("name", name),
+                Json.Flag("petted", petted),
+                Json.Flag("bowl", bowl)));
+        }
+
+        private void SendMines()
+        {
+            if (!Live) return;
+
+            var deepest = 0;
+            var skull = 0;
+            try
+            {
+                deepest = Game1.player.deepestMineLevel;
+                if (deepest > MineFloors) skull = deepest - MineFloors;
+            }
+            catch
+            {
+            }
+
+            _bridge.Broadcast("sdv_mines", Json.Message(
+                "sdv_mines",
+                Json.Num("deepest", Math.Min(deepest, MineFloors)),
+                Json.Num("skull", skull)));
+        }
+
+        private const int MineFloors = 120;
+
+        private void SendCollections()
+        {
+            if (!Live) return;
+
+            var donated = 0;
+            var carried = new List<string>();
+            try
+            {
+                if (Game1.getLocationFromName("ArchaeologyHouse") is LibraryMuseum museum)
+                {
+                    donated = museum.museumPieces.Count();
+                    if (_lastDonated != donated)
+                    {
+                        _lastDonated = donated;
+                        Monitor.Log($"Museum: {donated} pieces donated.", LogLevel.Debug);
+                    }
+                    foreach (var item in Game1.player.Items)
+                    {
+                        if (item == null) continue;
+                        if (!museum.isItemSuitableForDonation(item)) continue;
+                        SendSprite(item.QualifiedItemId);
+                        carried.Add(Json.Object(
+                            Json.Str("id", item.QualifiedItemId),
+                            Json.Str("name", item.DisplayName)));
+                    }
+                }
+            }
+            catch (Exception failure)
+            {
+                Monitor.Log("Could not read the museum: " + failure.Message, LogLevel.Warn);
+            }
+
+            _bridge.Broadcast("sdv_collections", Json.Message(
+                "sdv_collections",
+                Json.Num("donated", donated),
+                Json.Num("total", MuseumPieces),
+                Json.Array("carried", carried)));
+        }
+
+        private const int MuseumPieces = 95;
+
+        private int _lastDonated = -1;
 
         private static string WeatherToday()
         {

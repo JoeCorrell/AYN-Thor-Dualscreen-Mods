@@ -19,5 +19,9 @@ namespace StardewSecondScreen
         public bool SendVillagers { get; set; } = true;
 
         public bool SendMap { get; set; } = true;
+
+        public bool SendCrafting { get; set; } = true;
+
+        public bool AllowRemote { get; set; } = false;
     }
 }

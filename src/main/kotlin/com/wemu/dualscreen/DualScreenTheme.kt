@@ -10,39 +10,6 @@ import com.thor.core.designsystem.theme.LocalThorTheme
 import com.thor.core.designsystem.theme.ThorColors
 import com.thor.core.designsystem.theme.ThorTheme
 
-/**
- * The standalone app's own palette, stated rather than inherited.
- *
- * <h2>Why it has one at all</h2>
- *
- * The pages this app draws take every colour from the theme above them. Inside
- * wemu that is the theme the player chose, so they look like the launcher they
- * are part of. This app cannot read that choice — it lives in wemu's private
- * storage — and what it fell back to was the design system's default, which is
- * Material's baseline palette. That is where the blue came from, and patching
- * the two or three colours that showed it most only moved the problem: fix the
- * text and the accent stays blue, fix the accent and a surface underneath is
- * still wrong, and every round leaves a page looking like two themes arguing.
- *
- * So this states all of it. Every colour the design system asks for is given a
- * value here, which means nothing is inherited and nothing can surprise it if
- * the default palette ever changes.
- *
- * <h2>Why these colours</h2>
- *
- * Paper and ink. The panels on the game pages are the game's own wood and
- * parchment, and chrome around them has to be quieter than they are, so the
- * background is a warm off-white and text is near-black rather than pure black —
- * pure black against a warm ground reads as a hole. The accent is amber, which
- * is the one hue in this range that can mark something as urgent without
- * shouting over the art beside it.
- *
- * <h2>What it keeps from the design system</h2>
- *
- * Everything that is not colour: spacing, shapes, motion, surfaces and the type
- * scale still come from `ThorTheme`, so a page laid out for the console is laid
- * out identically here. Only the palette is replaced.
- */
 @Composable
 fun DualScreenTheme(content: @Composable () -> Unit) {
     ThorTheme {

@@ -16,6 +16,8 @@ namespace StardewSecondScreen
 
         public bool AlreadySent(string id) => _sent.Contains(id);
 
+        public void Remember(string id) => _sent.Add(id);
+
         public byte[]? EncodeRegion(Texture2D? sheet, Microsoft.Xna.Framework.Rectangle source)
         {
             try

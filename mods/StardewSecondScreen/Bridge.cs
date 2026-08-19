@@ -32,10 +32,13 @@ namespace StardewSecondScreen
 
         private TcpListener? _listener;
 
-        public Bridge(int port, Action<string> log)
+        private readonly bool _remote;
+
+        public Bridge(int port, Action<string> log, bool remote = false)
         {
             _port = port;
             _log = log;
+            _remote = remote;
         }
 
         public bool HasClients
@@ -47,9 +50,12 @@ namespace StardewSecondScreen
         {
             try
             {
-                _listener = new TcpListener(IPAddress.Loopback, _port);
+
+                _listener = new TcpListener(_remote ? IPAddress.Any : IPAddress.Loopback, _port);
                 _listener.Start();
-                _log($"Listening on ws://127.0.0.1:{_port}");
+                _log(_remote
+                    ? $"Listening on ws://0.0.0.0:{_port} (this machine and the network)"
+                    : $"Listening on ws://127.0.0.1:{_port}");
                 _ = Task.Run(AcceptLoop);
             }
             catch (Exception e)
