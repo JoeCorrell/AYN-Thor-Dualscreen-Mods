@@ -1,8 +1,8 @@
 {
   "Name": "Wemu Second Screen",
-  "Author": "wemu",
+  "Author": "Profmags",
   "Version": "1.0.0",
-  "Description": "Publishes the day, the journal, the calendar and the bag to wemu's second screen.",
+  "Description": "Sends your day, map, farm, journal, bundles and bag to a second screen, and lets you switch tools, eat, sort your bag and cancel quests from it.",
   "UniqueID": "wemu.SecondScreen",
   "EntryDll": "StardewSecondScreen.dll",
   "MinimumApiVersion": "4.0.0",
