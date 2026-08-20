@@ -1,28 +1,40 @@
-# Wemu Second Screen
+# WEMU Second Screen for Stardew Valley
 
-A SMAPI mod that publishes what is happening in Stardew Valley to a second
-screen.
+A SMAPI mod that publishes live Stardew Valley state and game artwork to WEMU's
+lower-screen companion.
 
-It reads the game and sends it over a socket. Nothing is patched, so it
-keeps working across game updates rather than breaking on them.
+It reads the game and sends it over a local socket. Gameplay state is read
+through SMAPI without patching Stardew's methods.
+
+## Companion pages
+
+| Page | Contents |
+| --- | --- |
+| `Today` | Weekday, date, time, weather, luck, gold, energy, health, shipping, history, skills, hotbar, and backpack |
+| `Map` | Valley map, current place, and farmer marker |
+| `Farm` | Independently scrollable machine, animal, and fruit-tree lists with farm summaries |
+| `Journal` | Expandable active quests, objectives, deadlines, and cancellation where allowed |
+| `Bundles` | Community Center progress and missing items |
+| `Calendar` | Fixed four-week calendar with NPC birthday portraits and labels, festivals, and travelling-cart days |
+| `Settings` | Appearance, page visibility, connection details, and live mod configuration |
 
 ## What it sends
 
 - The day: date, clock, weather today and tomorrow, gold, luck, energy, health
 - Your bag, with the game's own icons for every item
+- Water remaining in watering cans and weapon special-action cooldowns
 - The valley map, where you are on it, and your farmer drawn as the marker
 - The name of the place you are standing, as the game names it
 - Crops needing water, anywhere you own them
 - Fruit trees with fruit waiting
 - Machines with something in them, and how long is left
 - Animals not yet petted, and produce waiting
-- The pet, and whether its water bowl is filled
 - The shipping bin, and what today is worth so far
 - Community Center bundles, and what is still missing
-- Villagers, birthdays and who you have not spoken to today
+- Villagers and birthdays
 - What each villager loves, so the panel can flag a gift you are carrying
 - Quests with their current objective, and special orders with their deadlines
-- Every skill and the experience still owed to its next level
+- Every skill and its current level
 - Recipes you have the ingredients to craft or cook right now
 - The season's calendar: birthdays with portraits, and festivals with the time
   and place they run
@@ -36,9 +48,16 @@ the panel repeats all of it. It goes back the moment the screen disconnects.
 
 ## What it accepts
 
-Selecting a hotbar slot, moving a bag slot to hand, eating what is in a slot,
-sorting the bag, and cancelling a quest if the game allows that quest to be
-cancelled.
+- Select a hotbar slot
+- Tap a backpack item to move it to the active slot
+- Hold a supported item to eat or use it
+- Sort the bag
+- Cancel a quest when Stardew allows it
+- Press L/R to rotate each unlocked backpack row through the active hotbar
+
+The Today page keeps the hotbar and all unlocked backpack rows together. L/R is
+routed from WEMU's game session, so the physical controller changes rows without
+moving focus away from gameplay.
 
 Every one of those runs on the game thread, and each can be turned off.
 
@@ -50,7 +69,7 @@ screen's settings page, and changing it there writes this file.
 | Option | Default | |
 | --- | --- | --- |
 | `HideGameHud` | true | Take Stardew's HUD off the top screen |
-| `AllowInventoryEdits` | true | Let the panel move items |
+| `AllowInventoryEdits` | true | Let the panel select, move, use, and sort items |
 | `AllowQuestCancel` | true | Let the panel cancel quests |
 | `FarmerMarker` | true | Draw your farmer as the map marker |
 | `SendMap` | true | The valley picture, the marker and the portrait |

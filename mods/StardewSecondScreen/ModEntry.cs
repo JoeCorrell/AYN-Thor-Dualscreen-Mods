@@ -14,6 +14,7 @@ using StardewValley.WorldMaps;
 using StardewValley.Objects;
 using StardewValley.Menus;
 using StardewValley.TerrainFeatures;
+using StardewValley.Tools;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace StardewSecondScreen
@@ -29,6 +30,7 @@ namespace StardewSecondScreen
         private int _lastGold = -1;
         private int _lastInventoryHash;
         private int _lastSelected = -1;
+        private int _lastWeaponCooldownBucket = -1;
         private int _lastMapX = -1;
         private int _lastMapY = -1;
 
@@ -191,6 +193,16 @@ namespace StardewSecondScreen
                 SendInventory();
             }
 
+            if (connected && e.IsMultipleOf(6))
+            {
+                var cooldown = WeaponCooldownBucket();
+                if (cooldown != _lastWeaponCooldownBucket)
+                {
+                    _lastWeaponCooldownBucket = cooldown;
+                    SendInventory();
+                }
+            }
+
             _commands.Drain(Apply);
         }
 
@@ -212,6 +224,13 @@ namespace StardewSecondScreen
                     if (from < 0 || to < 0) break;
                     if (from >= player.Items.Count || to >= player.Items.Count) break;
                     (player.Items[from], player.Items[to]) = (player.Items[to], player.Items[from]);
+                    SendInventory();
+                    break;
+
+                case "shift_toolbar":
+                    if (!_config.AllowInventoryEdits) break;
+                    player.shiftToolbar(command.A > 0);
+                    _lastInventoryHash = InventoryHash();
                     SendInventory();
                     break;
 
@@ -506,7 +525,10 @@ namespace StardewSecondScreen
                     var produceId = animal.currentProduce.Value;
                     var produceQid = "";
                     var produceName = "";
-                    if (!string.IsNullOrEmpty(produceId))
+                    // Stardew uses "-1" as the no-produce sentinel. Qualifying
+                    // it creates an invalid object ID whose error sprite looks
+                    // like weeds, making idle chickens appear to produce weeds.
+                    if (!string.IsNullOrWhiteSpace(produceId) && produceId != "-1")
                     {
                         produceQid = ItemRegistry.QualifyItemId(produceId) ?? "(O)" + produceId;
                         var data = ItemRegistry.GetData(produceQid);
@@ -554,6 +576,7 @@ namespace StardewSecondScreen
                 Json.Str("season", Capitalise(Game1.currentSeason)),
                 Json.Num("day", Game1.dayOfMonth),
                 Json.Num("year", Game1.year),
+                Json.Str("weekday", WorldDate.GetDayOfWeekFor(Game1.dayOfMonth).ToString()),
                 Json.Num("timeOfDay", Game1.timeOfDay),
                 Json.Str("weatherToday", WeatherToday()),
                 Json.Str("weatherTomorrow", WeatherTomorrow()),
@@ -763,12 +786,20 @@ namespace StardewSecondScreen
                     slots.Add(Json.Object(Json.Num("slot", slot), Json.Str("id", "")));
                     continue;
                 }
+                var wateringCan = item as WateringCan;
+                var weapon = item as MeleeWeapon;
+                var cooldown = WeaponCooldown(weapon);
                 slots.Add(Json.Object(
                     Json.Num("slot", slot),
                     Json.Str("id", item.QualifiedItemId),
                     Json.Str("name", item.DisplayName),
                     Json.Num("count", item.Stack),
                     Json.Num("quality", item.Quality),
+                    Json.Num("water", wateringCan?.WaterLeft ?? -1),
+                    Json.Num("waterMax", wateringCan?.waterCanMax ?? 0),
+                    Json.Flag("bottomless", wateringCan?.IsBottomless ?? false),
+                    Json.Num("cooldownMs", cooldown.remaining),
+                    Json.Num("cooldownMax", cooldown.maximum),
                     Json.Str("category", item.getCategoryName())));
             }
 
@@ -777,6 +808,32 @@ namespace StardewSecondScreen
                 Json.Num("selected", player.CurrentToolIndex),
                 Json.Num("capacity", player.MaxItems),
                 Json.Array("items", slots)));
+
+            _lastWeaponCooldownBucket = WeaponCooldownBucket();
+        }
+
+        private static (int remaining, int maximum) WeaponCooldown(MeleeWeapon? weapon)
+        {
+            if (weapon == null) return (-1, 0);
+            return weapon.type.Value switch
+            {
+                MeleeWeapon.dagger => (Math.Max(0, MeleeWeapon.daggerCooldown),
+                    MeleeWeapon.daggerCooldownTime),
+                MeleeWeapon.club => (Math.Max(0, MeleeWeapon.clubCooldown),
+                    MeleeWeapon.clubCooldownTime),
+                MeleeWeapon.stabbingSword => (Math.Max(0, MeleeWeapon.attackSwordCooldown),
+                    MeleeWeapon.defenseCooldownTime),
+                _ => (Math.Max(0, MeleeWeapon.defenseCooldown),
+                    MeleeWeapon.defenseCooldownTime),
+            };
+        }
+
+        private static int WeaponCooldownBucket()
+        {
+            var remaining = Math.Max(
+                Math.Max(MeleeWeapon.defenseCooldown, MeleeWeapon.attackSwordCooldown),
+                Math.Max(MeleeWeapon.daggerCooldown, MeleeWeapon.clubCooldown));
+            return remaining <= 0 ? 0 : (remaining + 99) / 100;
         }
 
         private void SendQuests()
@@ -945,6 +1002,8 @@ namespace StardewSecondScreen
             Piece("ui:check_on", cursors, new Microsoft.Xna.Framework.Rectangle(236, 425, 9, 9));
             Piece("ui:button", cursors, new Microsoft.Xna.Framework.Rectangle(432, 439, 9, 9),
                   inset: 3);
+            Piece("ui:water_gauge", cursors,
+                  new Microsoft.Xna.Framework.Rectangle(297, 420, 14, 5));
 
             if (!SendGround()) missing.Add("ui:ground");
             SendGroundChoices();
@@ -1950,7 +2009,7 @@ namespace StardewSecondScreen
             if (Game1.isSnowing) return "Snow";
             if (Game1.isRaining) return "Rain";
             if (Game1.isDebrisWeather) return "Windy";
-            return "Sun";
+            return "Sunny";
         }
 
         private static string WeatherTomorrow()
@@ -1970,7 +2029,7 @@ namespace StardewSecondScreen
                     "Snow" => "Snow",
                     "Wind" => "Windy",
                     "Festival" => "Festival",
-                    "Sun" => "Sun",
+                    "Sun" => "Sunny",
                     _ => Capitalise(raw!),
                 };
             }
@@ -2027,6 +2086,12 @@ namespace StardewSecondScreen
                 if (item == null) { hash = hash * 31; continue; }
                 hash = hash * 31 + item.QualifiedItemId.GetHashCode();
                 hash = hash * 31 + item.Stack;
+                if (item is WateringCan wateringCan)
+                {
+                    hash = hash * 31 + wateringCan.WaterLeft;
+                    hash = hash * 31 + wateringCan.waterCanMax;
+                    hash = hash * 31 + (wateringCan.IsBottomless ? 1 : 0);
+                }
             }
             return hash;
         }

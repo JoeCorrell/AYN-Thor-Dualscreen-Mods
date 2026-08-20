@@ -8,8 +8,8 @@ android {
 
     defaultConfig {
         applicationId = "com.wemu.dualscreenmods"
-        versionCode = providers.gradleProperty("wemuVersionCode").orNull?.toIntOrNull() ?: 1
-        versionName = providers.gradleProperty("wemuVersionName").orNull ?: "0.1.0"
+        versionCode = providers.gradleProperty("wemuVersionCode").orNull?.toIntOrNull() ?: 3
+        versionName = providers.gradleProperty("wemuVersionName").orNull ?: "0.3.0"
     }
 
     buildTypes {

@@ -4,7 +4,7 @@
   "Version": "1.0.0",
   "Description": "Sends your day, map, farm, journal, bundles and bag to a second screen, and lets you switch tools, eat, sort your bag and cancel quests from it.",
   "UniqueID": "wemu.SecondScreen",
-  "EntryDll": "StardewSecondScreen.dll",
+  "EntryDll": "StardewDualScreen.dll",
   "MinimumApiVersion": "4.0.0",
   "UpdateKeys": []
 }
